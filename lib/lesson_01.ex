@@ -9,7 +9,7 @@ defmodule Lesson01 do
   end
 
   def start(config) do
-    :wx_object.start_link(__MODULE__, config, [])
+    :wx_object.start_link __MODULE__, config, []
   end
 
   def init(config) do
@@ -17,8 +17,8 @@ defmodule Lesson01 do
   end
 
   def do_init(config) do
-    parent = :proplists.get_value(:parent, config)
-    size = :proplists.get_value(:size, config)
+    parent = :proplists.get_value :parent, config
+    size = :proplists.get_value :size, config
     opts = [size: size, style: :wx_const.wx_sunken_border]
     gl_attrib = [
       attribList: [
@@ -30,13 +30,13 @@ defmodule Lesson01 do
         :wx_const.wx_gl_depth_size, 24, 0
       ]
     ]
-    canvas = :wxGLCanvas.new(parent, opts ++ gl_attrib)
-    :wxWindow.hide(parent)
-    :wxWindow.reparent(canvas, parent)
-    :wxWindow.show(parent)
-    :wxGLCanvas.setCurrent(canvas)
-    setup_gl(canvas)
-    timer = :timer.send_interval(20, self, :update)
+    canvas = :wxGLCanvas.new parent, opts ++ gl_attrib
+    :wxWindow.hide parent
+    :wxWindow.reparent canvas, parent
+    :wxWindow.show parent
+    :wxGLCanvas.setCurrent canvas
+    setup_gl canvas
+    timer = :timer.send_interval 20, self, :update
 
     {parent, %State{parent: parent, config: config, canvas: canvas, timer: timer}}
   end
@@ -45,11 +45,11 @@ defmodule Lesson01 do
     case w == 0 or h == 0 do
       true -> :skip
       _ ->
-        :gl.viewport(0, 0, w, h)
-        :gl.matrixMode(:wx_const.gl_projection)
+        :gl.viewport 0, 0, w, h
+        :gl.matrixMode :wx_const.gl_projection
         :gl.loadIdentity
-        :glu.perspective(45.0, w/h, 0.1, 100.0)
-        :gl.matrixMode(:wx_const.gl_modelview)
+        :glu.perspective 45.0, w / h, 0.1, 100.0
+        :gl.matrixMode :wx_const.gl_modelview
         :gl.loadIdentity
     end
 
@@ -62,9 +62,9 @@ defmodule Lesson01 do
   end
 
   def handle_info(:stop, state) do
-    :timer.cancel(state.timer)
+    :timer.cancel state.timer
     try do
-      :wxGLCanvas.destroy(state.canvas)
+      :wxGLCanvas.destroy state.canvas
     catch
       error, reason ->
         {error, reason}
@@ -83,35 +83,37 @@ defmodule Lesson01 do
 
   def terminate(_reason, state) do
     try do
-      :wxGLCanvas.destroy(state.canvas)
+      :wxGLCanvas.destroy state.canvas
     catch
       error, reason ->
         {error, reason}
     end
-    :timer.cancel(state.timer)
-    :timer.sleep(300)
+    :timer.cancel state.timer
+    :timer.sleep 300
   end
 
   def setup_gl(win) do
-    {_w, _h} = :wxWindow.getClientSize(win)
-    :gl.shadeModel(:wx_const.gl_smooth)
-    :gl.clearColor(0.0, 0.0, 0.0, 0.0)
-    :gl.clearDepth(1.0)
-    :gl.enable(:wx_const.gl_depth_test)
-    :gl.depthFunc(:wx_const.gl_lequal)
-    :gl.hint(:wx_const.gl_perspective_correction_hint, :wx_const.gl_nicest)
+    {_w, _h} = :wxWindow.getClientSize win
+    :gl.shadeModel :wx_const.gl_smooth
+    :gl.clearColor 0.0, 0.0, 0.0, 0.0
+    :gl.clearDepth 1.0
+    :gl.enable :wx_const.gl_depth_test
+    :gl.depthFunc :wx_const.gl_lequal
+    :gl.hint :wx_const.gl_perspective_correction_hint, :wx_const.gl_nicest
     :ok
   end
 
   def render(state) do
-    draw()
-    :wxGLCanvas.swapBuffers(state.canvas)
+    draw
+    :wxGLCanvas.swapBuffers state.canvas
   end
 
   def draw do
     use Bitwise
-    :gl.clear(bor(:wx_const.gl_color_buffer_bit, :wx_const.gl_depth_buffer_bit))
+
+    :gl.clear bor(:wx_const.gl_color_buffer_bit, :wx_const.gl_depth_buffer_bit)
     :gl.loadIdentity
+
     :ok
   end
 end

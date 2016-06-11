@@ -11,7 +11,6 @@ defmodule Lesson07 do
       :config,
       :canvas,
       :timer,
-      :time,
       :texture_near,
       :texture_linear,
       :texture_mipmap,
@@ -19,9 +18,9 @@ defmodule Lesson07 do
       :yrot,
       :xspeed,
       :yspeed,
-      :light_ambient,
-      :light_diffuse,
-      :light_position,
+      :light_ambient,  # these could be moved
+      :light_diffuse,  # out of state as they
+      :light_position, # aren't read over time
       :zindex,
       :lights
     ]
@@ -32,7 +31,7 @@ defmodule Lesson07 do
   end
 
   def start(config) do
-    :wx_object.start_link(__MODULE__, config, [])
+    :wx_object.start_link __MODULE__, config, []
   end
 
   def init(config) do
@@ -40,10 +39,10 @@ defmodule Lesson07 do
   end
 
   def do_init(config) do
-    parent = :proplists.get_value(:parent, config)
-    size = :proplists.get_value(:size, config)
-    opts = [size: size, style: :wx_const.wx_sunken_border]
-    gl_attrib = [
+    parent = :proplists.get_value :parent, config
+    opts = [
+      size: :proplists.get_value(:size, config),
+      style: :wx_const.wx_sunken_border,
       attribList: [
         :wx_const.wx_gl_rgba,
         :wx_const.wx_gl_doublebuffer,
@@ -53,13 +52,13 @@ defmodule Lesson07 do
         :wx_const.wx_gl_depth_size, 24, 0
       ]
     ]
-    canvas = :wxGLCanvas.new(parent, opts ++ gl_attrib)
-    :wxGLCanvas.connect(canvas, :size)
-    :wxGLCanvas.connect(canvas, :key_up)
-    :wxWindow.hide(parent)
-    :wxWindow.reparent(canvas, parent)
-    :wxWindow.show(parent)
-    :wxGLCanvas.setCurrent(canvas)
+    canvas = :wxGLCanvas.new(parent, opts)
+    :wxGLCanvas.connect canvas, :size
+    :wxGLCanvas.connect canvas, :key_up
+    :wxWindow.hide parent
+    :wxWindow.reparent canvas, parent
+    :wxWindow.show parent
+    :wxGLCanvas.setCurrent canvas
 
     state = %State{
       parent: parent,
@@ -76,67 +75,63 @@ defmodule Lesson07 do
       lights: false
     }
 
-    new_state = setup_gl(state)
-    timer = :timer.send_interval(20, self, :update)
+    new_state = setup_gl state
+    timer = :timer.send_interval 20, self, :update
 
     {parent, %State{ new_state | timer: timer } }
   end
 
   def handle_event(wx(event: wxSize(size: {w, h})), state) do
-    IO.puts "size event"
-    case w == 0 or h == 0 do
-      true -> :skip
-      _ ->
-        resize_gl_scene(w, h)
-    end
-
+    IO.puts "wxSize event: #{inspect {w, h}}"
+    unless w == 0 or h == 0, do: resize_gl_scene w, h
     {:noreply, state}
   end
 
   def handle_event(wx(event: wxKey(keyCode: key_code)), state) do
-    IO.puts "key event"
+    IO.puts "wxKey event: #{key_code}"
+
     wxk_up = :wx_const.wxk_up
     wxk_down = :wx_const.wxk_down
     wxk_left = :wx_const.wxk_left
     wxk_right = :wx_const.wxk_right
 
-    new_state = case key_code do
-      ?L ->
-        case state.lights do
-          true ->
-            :gl.disable(:wx_const.gl_lighting)
-            %State{ state | lights: false }
-          false ->
-            :gl.enable(:wx_const.gl_lighting)
-            %State{ state | lights: true }
-        end
-      ?I ->
-        %State{ state | zindex: state.zindex + 0.02 }
-      ?O ->
-        %State{ state | zindex: state.zindex - 0.02 }
-      ^wxk_up ->
-        %State{ state | xspeed: state.xspeed + 0.01 }
-      ^wxk_down ->
-        %State{ state | xspeed: state.xspeed - 0.01 }
-      ^wxk_left ->
-        %State{ state | yspeed: state.yspeed + 0.01 }
-      ^wxk_right ->
-        %State{ state | yspeed: state.yspeed - 0.01 }
-      _ -> state
-    end
-
-    {:noreply, new_state}
+    {
+      :noreply,
+      case key_code do
+        ?L ->
+          case state.lights do
+            true ->
+              :gl.disable :wx_const.gl_lighting
+              %State{ state | lights: false }
+            false ->
+              :gl.enable :wx_const.gl_lighting
+              %State{ state | lights: true }
+          end
+        ?I ->
+          %State{ state | zindex: state.zindex + 0.02 }
+        ?O ->
+          %State{ state | zindex: state.zindex - 0.02 }
+        ^wxk_up ->
+          %State{ state | xspeed: state.xspeed + 0.01 }
+        ^wxk_down ->
+          %State{ state | xspeed: state.xspeed - 0.01 }
+        ^wxk_left ->
+          %State{ state | yspeed: state.yspeed + 0.01 }
+        ^wxk_right ->
+          %State{ state | yspeed: state.yspeed - 0.01 }
+        _ -> state
+      end
+    }
   end
 
   def handle_info(:update, state) do
-    new_state = :wx.batch(fn() -> render(state) end)
-    {:noreply, new_state}
+    {:noreply, :wx.batch(fn() -> render(state) end)}
   end
 
   def handle_info(:stop, state) do
-    :timer.cancel(state.timer)
+    :timer.cancel state.timer
     try do
-      :wxGLCanvas.destroy(state.canvas)
+      :wxGLCanvas.destroy state.canvas
     catch
       error, reason ->
         {error, reason}
@@ -154,131 +149,130 @@ defmodule Lesson07 do
 
   def terminate(_reason, state) do
     try do
-      :wxGLCanvas.destroy(state.canvas)
+      :wxGLCanvas.destroy state.canvas
     catch
       error, reason ->
         {error, reason}
     end
-    :timer.cancel(state.timer)
-    :timer.sleep(300)
+    :timer.cancel state.timer
+    :timer.sleep 300
   end
 
   def resize_gl_scene(width, height) do
-    :gl.viewport(0, 0, width, height)
-    :gl.matrixMode(:wx_const.gl_projection)
+    :gl.viewport 0, 0, width, height
+    :gl.matrixMode :wx_const.gl_projection
     :gl.loadIdentity
-    :glu.perspective(45.0, width/height, 0.1, 100.0)
-    :gl.matrixMode(:wx_const.gl_modelview)
+    :glu.perspective 45.0, width / height, 0.1, 100.0
+    :gl.matrixMode :wx_const.gl_modelview
     :gl.loadIdentity
   end
 
   def setup_gl(state) do
-    {w, h} = :wxWindow.getClientSize(state.parent)
-    resize_gl_scene(w, h)
-    :gl.enable(:wx_const.gl_texture_2d)
-    :gl.shadeModel(:wx_const.gl_smooth)
-    :gl.clearColor(0.0, 0.0, 0.0, 0.0)
-    :gl.clearDepth(1.0)
-    :gl.enable(:wx_const.gl_depth_test)
-    :gl.depthFunc(:wx_const.gl_lequal)
-    :gl.hint(:wx_const.gl_perspective_correction_hint, :wx_const.gl_nicest)
+    {w, h} = :wxWindow.getClientSize state.parent
+    resize_gl_scene w, h
+    :gl.enable :wx_const.gl_texture_2d
+    :gl.shadeModel :wx_const.gl_smooth
+    :gl.clearColor 0.0, 0.0, 0.0, 0.0
+    :gl.clearDepth 1.0
+    :gl.enable :wx_const.gl_depth_test
+    :gl.depthFunc :wx_const.gl_lequal
+    :gl.hint :wx_const.gl_perspective_correction_hint, :wx_const.gl_nicest
 
-    :gl.lightfv(:wx_const.gl_light1, :wx_const.gl_ambient, state.light_ambient)
-    :gl.lightfv(:wx_const.gl_light1, :wx_const.gl_diffuse, state.light_diffuse)
-    :gl.lightfv(:wx_const.gl_light1, :wx_const.gl_position, state.light_position)
-    :gl.enable(:wx_const.gl_light1)
+    :gl.lightfv :wx_const.gl_light1, :wx_const.gl_ambient, state.light_ambient
+    :gl.lightfv :wx_const.gl_light1, :wx_const.gl_diffuse, state.light_diffuse
+    :gl.lightfv :wx_const.gl_light1, :wx_const.gl_position, state.light_position
+    :gl.enable :wx_const.gl_light1
 
-    image = :wxImage.new('crate.jpg')
-    texture_near = load_texture_by_image(image, :wx_const.gl_nearest, :wx_const.gl_nearest)
-    texture_linear = load_texture_by_image(image, :wx_const.gl_linear, :wx_const.gl_linear)
-    texture_mipmap = load_texture_by_image(image, :wx_const.gl_nearest, :wx_const.gl_linear_mipmap_nearest)
-    build_mipmap_by_image(image)
+    image = :wxImage.new 'crate.jpg'
+    texture_near = load_texture_by_image image, :wx_const.gl_nearest, :wx_const.gl_nearest
+    texture_linear = load_texture_by_image image, :wx_const.gl_linear, :wx_const.gl_linear
+    texture_mipmap = load_texture_by_image image, :wx_const.gl_nearest, :wx_const.gl_linear_mipmap_nearest
+    build_mipmap_by_image image
 
     %State{ state | texture_near: texture_near, texture_linear: texture_linear, texture_mipmap: texture_mipmap }
   end
 
   def render(state) do
-    new_state = draw(state)
-    :wxGLCanvas.swapBuffers(state.canvas)
-    new_state
+    draw state
+    :wxGLCanvas.swapBuffers state.canvas
+    %State{ state | xrot: state.xrot + state.xspeed, yrot: state.yrot + state.yspeed }
   end
 
   def draw(state) do
     use Bitwise
-    :gl.clear(bor(:wx_const.gl_color_buffer_bit, :wx_const.gl_depth_buffer_bit))
+
+    :gl.clear bor(:wx_const.gl_color_buffer_bit, :wx_const.gl_depth_buffer_bit)
     :gl.loadIdentity
-    :gl.translatef(0.0, 0.0, state.zindex)
+    :gl.translatef 0.0, 0.0, state.zindex
 
-    :gl.rotatef(state.xrot, 1.0, 0.0, 0.0)
-    :gl.rotatef(state.yrot, 0.0, 1.0, 0.0)
+    :gl.rotatef state.xrot, 1.0, 0.0, 0.0
+    :gl.rotatef state.yrot, 0.0, 1.0, 0.0
+    :gl.bindTexture :wx_const.gl_texture_2d, state.texture_linear.id
 
-    :gl.bindTexture(:wx_const.gl_texture_2d, state.texture_linear.id)
-    :gl.begin(:wx_const.gl_quads)
+    :gl.begin :wx_const.gl_quads
 
     # Front Face
-    :gl.normal3f(0.0, 0.0, 1.0)
-    :gl.texCoord2f(0.0, 0.0); :gl.vertex3f(-1.0, -1.0,  1.0)
-    :gl.texCoord2f(1.0, 0.0); :gl.vertex3f( 1.0, -1.0,  1.0)
-    :gl.texCoord2f(1.0, 1.0); :gl.vertex3f( 1.0,  1.0,  1.0)
-    :gl.texCoord2f(0.0, 1.0); :gl.vertex3f(-1.0,  1.0,  1.0)
+    :gl.normal3f 0.0, 0.0, 1.0
+    :gl.texCoord2f 0.0, 0.0; :gl.vertex3f -1.0, -1.0,  1.0
+    :gl.texCoord2f 1.0, 0.0; :gl.vertex3f  1.0, -1.0,  1.0
+    :gl.texCoord2f 1.0, 1.0; :gl.vertex3f  1.0,  1.0,  1.0
+    :gl.texCoord2f 0.0, 1.0; :gl.vertex3f -1.0,  1.0,  1.0
 
     # Back Face
-    :gl.normal3f(0.0, 0.0, -1.0)
-    :gl.texCoord2f(1.0, 0.0); :gl.vertex3f(-1.0, -1.0, -1.0)
-    :gl.texCoord2f(1.0, 1.0); :gl.vertex3f(-1.0,  1.0, -1.0)
-    :gl.texCoord2f(0.0, 1.0); :gl.vertex3f( 1.0,  1.0, -1.0)
-    :gl.texCoord2f(0.0, 0.0); :gl.vertex3f( 1.0, -1.0, -1.0)
+    :gl.normal3f 0.0, 0.0, -1.0
+    :gl.texCoord2f 1.0, 0.0; :gl.vertex3f -1.0, -1.0, -1.0
+    :gl.texCoord2f 1.0, 1.0; :gl.vertex3f -1.0,  1.0, -1.0
+    :gl.texCoord2f 0.0, 1.0; :gl.vertex3f  1.0,  1.0, -1.0
+    :gl.texCoord2f 0.0, 0.0; :gl.vertex3f  1.0, -1.0, -1.0
 
     # Top Face
-    :gl.normal3f(0.0, 1.0, 0.0)
-    :gl.texCoord2f(0.0, 1.0); :gl.vertex3f(-1.0,  1.0, -1.0)
-    :gl.texCoord2f(0.0, 0.0); :gl.vertex3f(-1.0,  1.0,  1.0)
-    :gl.texCoord2f(1.0, 0.0); :gl.vertex3f( 1.0,  1.0,  1.0)
-    :gl.texCoord2f(1.0, 1.0); :gl.vertex3f( 1.0,  1.0, -1.0)
+    :gl.normal3f 0.0, 1.0, 0.0
+    :gl.texCoord2f 0.0, 1.0; :gl.vertex3f -1.0,  1.0, -1.0
+    :gl.texCoord2f 0.0, 0.0; :gl.vertex3f -1.0,  1.0,  1.0
+    :gl.texCoord2f 1.0, 0.0; :gl.vertex3f  1.0,  1.0,  1.0
+    :gl.texCoord2f 1.0, 1.0; :gl.vertex3f  1.0,  1.0, -1.0
 
     # Bottom Face
-    :gl.normal3f(0.0, -1.0, 0.0)
-    :gl.texCoord2f(1.0, 1.0); :gl.vertex3f(-1.0, -1.0, -1.0)
-    :gl.texCoord2f(0.0, 1.0); :gl.vertex3f( 1.0, -1.0, -1.0)
-    :gl.texCoord2f(0.0, 0.0); :gl.vertex3f( 1.0, -1.0,  1.0)
-    :gl.texCoord2f(1.0, 0.0); :gl.vertex3f(-1.0, -1.0,  1.0)
+    :gl.normal3f 0.0, -1.0, 0.0
+    :gl.texCoord2f 1.0, 1.0; :gl.vertex3f -1.0, -1.0, -1.0
+    :gl.texCoord2f 0.0, 1.0; :gl.vertex3f  1.0, -1.0, -1.0
+    :gl.texCoord2f 0.0, 0.0; :gl.vertex3f  1.0, -1.0,  1.0
+    :gl.texCoord2f 1.0, 0.0; :gl.vertex3f -1.0, -1.0,  1.0
 
     # Right Face
-    :gl.normal3f(1.0, 0.0, 0.0)
-    :gl.texCoord2f(1.0, 0.0); :gl.vertex3f( 1.0, -1.0, -1.0)
-    :gl.texCoord2f(1.0, 1.0); :gl.vertex3f( 1.0,  1.0, -1.0)
-    :gl.texCoord2f(0.0, 1.0); :gl.vertex3f( 1.0,  1.0,  1.0)
-    :gl.texCoord2f(0.0, 0.0); :gl.vertex3f( 1.0, -1.0,  1.0)
+    :gl.normal3f 1.0, 0.0, 0.0
+    :gl.texCoord2f 1.0, 0.0; :gl.vertex3f  1.0, -1.0, -1.0
+    :gl.texCoord2f 1.0, 1.0; :gl.vertex3f  1.0,  1.0, -1.0
+    :gl.texCoord2f 0.0, 1.0; :gl.vertex3f  1.0,  1.0,  1.0
+    :gl.texCoord2f 0.0, 0.0; :gl.vertex3f  1.0, -1.0,  1.0
 
     # Left Face
-    :gl.normal3f(-1.0, 0.0, 0.0)
-    :gl.texCoord2f(0.0, 0.0); :gl.vertex3f(-1.0, -1.0, -1.0)
-    :gl.texCoord2f(1.0, 0.0); :gl.vertex3f(-1.0, -1.0,  1.0)
-    :gl.texCoord2f(1.0, 1.0); :gl.vertex3f(-1.0,  1.0,  1.0)
-    :gl.texCoord2f(0.0, 1.0); :gl.vertex3f(-1.0,  1.0, -1.0)
+    :gl.normal3f -1.0, 0.0, 0.0
+    :gl.texCoord2f 0.0, 0.0; :gl.vertex3f -1.0, -1.0, -1.0
+    :gl.texCoord2f 1.0, 0.0; :gl.vertex3f -1.0, -1.0,  1.0
+    :gl.texCoord2f 1.0, 1.0; :gl.vertex3f -1.0,  1.0,  1.0
+    :gl.texCoord2f 0.0, 1.0; :gl.vertex3f -1.0,  1.0, -1.0
 
     :gl.end
 
-    %State{ state | xrot: state.xrot + state.xspeed, yrot: state.yrot + state.yspeed }
+    :ok
   end
 
   def load_texture_by_image(image, filter_mag, filter_min) do
-    image_width = :wxImage.getWidth(image)
-    image_height = :wxImage.getHeight(image)
-    width = get_power_of_two_roof(image_width)
-    height = get_power_of_two_roof(image_height)
-    data = get_image_data(image)
+    image_width = :wxImage.getWidth image
+    image_height = :wxImage.getHeight image
+    width = containing_power_of_two image_width
+    height = containing_power_of_two image_height
+    data = get_image_data image
 
-    # Create opengl texture for the image
-    [texture_id] = :gl.genTextures(1)
-    :gl.bindTexture(:wx_const.gl_texture_2d, texture_id)
-    :gl.texParameteri(:wx_const.gl_texture_2d, :wx_const.gl_texture_mag_filter, filter_mag)
-    :gl.texParameteri(:wx_const.gl_texture_2d, :wx_const.gl_texture_min_filter, filter_min)
-    format = case :wxImage.hasAlpha(image) do
-      true -> :wx_const.gl_rgba
-      false -> :wx_const.gl_rgb
-    end
-    :gl.texImage2D(:wx_const.gl_texture_2d, 0, format, width, height, 0, format, :wx_const.gl_unsigned_byte, data)
+    # Create OpenGL texture for the image
+    [texture_id] = :gl.genTextures 1
+    :gl.bindTexture :wx_const.gl_texture_2d, texture_id
+    :gl.texParameteri :wx_const.gl_texture_2d, :wx_const.gl_texture_mag_filter, filter_mag
+    :gl.texParameteri :wx_const.gl_texture_2d, :wx_const.gl_texture_min_filter, filter_min
+    format = if :wxImage.hasAlpha(image), do: :wx_const.gl_rgba, else: :wx_const.gl_rgb
+    :gl.texImage2D :wx_const.gl_texture_2d, 0, format, width, height, 0, format, :wx_const.gl_unsigned_byte, data
+
     %Texture{
       id: texture_id,
       w: image_width,
@@ -291,25 +285,22 @@ defmodule Lesson07 do
   end
 
   def build_mipmap_by_image(image) do
-    image_width = :wxImage.getWidth(image)
-    image_height = :wxImage.getHeight(image)
-    width = get_power_of_two_roof(image_width)
-    height = get_power_of_two_roof(image_height)
-    data = get_image_data(image)
+    image_width = :wxImage.getWidth image
+    image_height = :wxImage.getHeight image
+    width = containing_power_of_two image_width
+    height = containing_power_of_two image_height
+    data = get_image_data image
 
-    # Create opengl texture for the image
-    format = case :wxImage.hasAlpha(image) do
-      true -> :wx_const.gl_rgba
-      false -> :wx_const.gl_rgb
-    end
-    :glu.build2DMipmaps(:wx_const.gl_texture_2d, format, width, height, format, :wx_const.gl_unsigned_byte, data)
+    # Create OpenGL texture for the image
+    format = if :wxImage.hasAlpha(image), do: :wx_const.gl_rgba, else: :wx_const.gl_rgb
+    :glu.build2DMipmaps :wx_const.gl_texture_2d, format, width, height, format, :wx_const.gl_unsigned_byte, data
   end
 
   def get_image_data(image) do
-    rgb = :wxImage.getData(image)
+    rgb = :wxImage.getData image
     if :wxImage.hasAlpha(image) do
-      alpha = :wxImage.getAlpha(image)
-      interleave_rgb_and_alpha(rgb, alpha)
+      alpha = :wxImage.getAlpha image
+      interleave_rgb_and_alpha rgb, alpha
     else
       rgb
     end
@@ -328,12 +319,7 @@ defmodule Lesson07 do
     )
   end
 
-  def get_power_of_two_roof(x) do
-    get_power_of_two_roof_2(1, x)
-  end
-
-  def get_power_of_two_roof_2(n, x) when n >= x, do: n
-  def get_power_of_two_roof_2(n, x) do
-    get_power_of_two_roof_2(n*2, x)
-  end
+  defp containing_power_of_two(x), do: containing_power_of_two(x, 1)
+  defp containing_power_of_two(x, n) when n >= x, do: n
+  defp containing_power_of_two(x, n), do: containing_power_of_two(x, 2*n)
 end
