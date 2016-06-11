@@ -1,12 +1,12 @@
 defmodule Noise do
   @behaviour :wx_object
+
   require Record
   Record.defrecordp :wx, Record.extract(:wx, from_lib: "wx/include/wx.hrl")
   Record.defrecordp :wxSize, Record.extract(:wxSize, from_lib: "wx/include/wx.hrl")
+  Record.defrecordp :wxKey, Record.extract(:wxKey, from_lib: "wx/include/wx.hrl")
 
-  defmodule State do
-    defstruct [:parent, :config, :canvas, :timer, :noise, :texture]
-  end
+  defmodule State, do: defstruct [:parent, :config, :canvas, :timer, :noise, :texture]
 
   def start(config) do
     :wx_object.start_link __MODULE__, config, []
@@ -31,28 +31,43 @@ defmodule Noise do
       ]
     ]
     canvas = :wxGLCanvas.new parent, opts
+    :wxGLCanvas.connect canvas, :size
+    :wxGLCanvas.connect canvas, :key_up
     :wxWindow.hide parent
     :wxWindow.reparent canvas, parent
     :wxWindow.show parent
     :wxGLCanvas.setCurrent canvas
 
     # Set up what OpenGL needs to initialize (:parent and :noise)
-    initial_state = %State{
+    # Generate a noise texture once to render on every draw
+    state = setup_gl %State{
       parent: parent,
       config: config,
       canvas: canvas,
-      noise: Noise.Simplex.new_config(%{min: 0.0, max: 1.0})
+      noise: Noise.Simplex.new_config(%{minimum: 0.0, maximum: 1.0, seed: 0})
     }
-
-    # Generate a noise texture once to render on every draw
-    post_gl_state = setup_gl initial_state
-
-    {parent, %{ post_gl_state | timer: :timer.send_interval(20, self, :update) }}
+    {parent, %{ state | timer: :timer.send_interval(20, self, :update) }}
   end
 
   def handle_event(wx(event: wxSize(size: {w, h})), state) do
+    IO.puts "wxSize event: #{inspect {w, h}}"
     unless w == 0 or h == 0, do: resize_gl_scene w, h
     {:noreply, state}
+  end
+
+  def handle_event(wx(event: wxKey(keyCode: key_code)), state) do
+    # wxk_up = :wx_const.wxk_up
+    # wxk_down = :wx_const.wxk_down
+    # wxk_left = :wx_const.wxk_left
+    # wxk_right = :wx_const.wxk_right
+
+    {
+      :noreply,
+      case key_code do
+        ?N -> put_in(state.noise.seed, :rand.uniform(trunc(1.0e308)))
+        _  -> state
+      end
+    }
   end
 
   def handle_info(:update, state) do
@@ -72,6 +87,10 @@ defmodule Noise do
 
   def handle_call(msg, _from, state) do
     {:reply, :ok, state}
+  end
+
+  def handle_cast({:seed, new}, state) do
+    {:noreply, put_in(state.noise.seed, new)}
   end
 
   def code_change(_, _, state) do
@@ -123,14 +142,25 @@ defmodule Noise do
 
   def draw(state) do
     use Bitwise
-    generate_noise_texture_data state
+
+    {w, h} = :wxWindow.getClientSize state.parent
+    width = containing_power_of_two w
+    height = containing_power_of_two h
+
+    data = for x <- 0..width, y <- 0..height do
+      noise = round(255 * Noise.Simplex.get(state.noise, {x, y}))
+      << noise, noise, noise >>
+    end |> :erlang.list_to_binary
 
     :gl.clear bor(:wx_const.gl_color_buffer_bit, :wx_const.gl_depth_buffer_bit)
     :gl.loadIdentity
 
     # Draw a quad where we can see it
-    :gl.translatef 0.0, 0.0, -4.0
+    :gl.translatef 0.0, 0.0, -3.5
     :gl.bindTexture :wx_const.gl_texture_2d, state.texture
+    :gl.texParameteri :wx_const.gl_texture_2d, :wx_const.gl_texture_mag_filter, :wx_const.gl_linear
+    :gl.texParameteri :wx_const.gl_texture_2d, :wx_const.gl_texture_min_filter, :wx_const.gl_linear
+    :gl.texImage2D :wx_const.gl_texture_2d, 0, :wx_const.gl_rgb, width, height, 0, :wx_const.gl_rgb, :wx_const.gl_unsigned_byte, data
     :gl.begin :wx_const.gl_quads
     :gl.texCoord2f 0.0, 0.0; :gl.vertex3f -1.0, -1.0,  1.0
     :gl.texCoord2f 1.0, 0.0; :gl.vertex3f  1.0, -1.0,  1.0
@@ -139,22 +169,6 @@ defmodule Noise do
     :gl.end
 
     :ok
-  end
-
-  defp generate_noise_texture_data(state) do
-    {w, h} = :wxWindow.getClientSize state.parent
-    width = containing_power_of_two w
-    height = containing_power_of_two h
-
-    data = for x <- 0..512, y <- 0..512 do
-      noise = Noise.Simplex.get(state.noise, {x, y})
-      <<round(255 * noise), round(255 * noise), round(255 * noise)>>
-    end |> :erlang.list_to_binary
-
-    :gl.bindTexture :wx_const.gl_texture_2d, state.texture
-    :gl.texParameteri :wx_const.gl_texture_2d, :wx_const.gl_texture_mag_filter, :wx_const.gl_linear
-    :gl.texParameteri :wx_const.gl_texture_2d, :wx_const.gl_texture_min_filter, :wx_const.gl_linear
-    :gl.texImage2D :wx_const.gl_texture_2d, 0, :wx_const.gl_rgb, width, height, 0, :wx_const.gl_rgb, :wx_const.gl_unsigned_byte, data
   end
 
   defp containing_power_of_two(x), do: containing_power_of_two(x, 1)
