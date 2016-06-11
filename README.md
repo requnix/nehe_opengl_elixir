@@ -1,6 +1,12 @@
-# NeheOpenglElixir
+# NeHe OpenGL Tutorials Elixir
 
-A port of [nehe_erlang](https://github.com/asceth/nehe_erlang).
+This is a fork of [knewter's port](https://github.com/knewter/nehe_opengl_elixir)
+of [asceth's port](https://github.com/asceth/nehe_erlang) of the legacy
+[Neon Helium OpenGL tutorials](http://nehe.gamedev.net).
+
+It has been cleaned up in order for it not to include any specific playground
+code in the `master` branch. Use it as a starting point if you want to see how
+some of the NeHe tutorials could be done in Elixir. I did.
 
 ## Play
 

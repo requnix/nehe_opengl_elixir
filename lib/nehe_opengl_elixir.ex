@@ -1,2 +1,0 @@
-defmodule NeheOpenglElixir do
-end
