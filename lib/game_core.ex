@@ -18,7 +18,7 @@ defmodule GameCore do
     :wx.new config
     Process.flag :trap_exit, true
 
-    frame = :wxFrame.new :wx.null, :wx_const.wx_id_any, 'NeHe Tutorial Launcher', [size: {300, 300}]
+    frame = :wxFrame.new :wx.null, :wx_const.wx_id_any, 'Noise Experiments', [size: {512, 512}]
     :wxFrame.show frame
     {frame, %State{win: frame}}
   end

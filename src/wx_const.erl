@@ -86,6 +86,9 @@ gl_texture_min_filter() ->
 gl_linear() ->
     ?GL_LINEAR.
 
+gl_point() ->
+    ?GL_POINT.
+
 gl_unsigned_byte() ->
     ?GL_UNSIGNED_BYTE.
 
