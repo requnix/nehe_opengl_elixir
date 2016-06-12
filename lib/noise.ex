@@ -38,19 +38,28 @@ defmodule Noise do
     :wxWindow.show parent
     :wxGLCanvas.setCurrent canvas
 
+    # Configure NoiseGenerator
+    {w, h} = :wxWindow.getClientSize parent
+    noise_config = Noise.Simplex.new_config(%{minimum: 0.0, maximum: 1.0, seed: 0})
+    {:ok, noise} = NoiseGenerator.start_link(
+      Map.merge(noise_config,
+                %{width:  containing_power_of_two(w),
+                  height: containing_power_of_two(h)})
+    )
     # Set up what OpenGL needs to initialize (:parent and :noise)
     # Generate a noise texture once to render on every draw
     state = setup_gl %State{
       parent: parent,
       config: config,
       canvas: canvas,
-      noise: Noise.Simplex.new_config(%{minimum: 0.0, maximum: 1.0, seed: 0})
+      noise: noise
     }
     {parent, %{ state | timer: :timer.send_interval(20, self, :update) }}
   end
 
   def handle_event(wx(event: wxSize(size: {w, h})), state) do
     IO.puts "wxSize event: #{inspect {w, h}}"
+    GenServer.cast(state.noise, {:set, :size, {w, h}})
     unless w == 0 or h == 0, do: resize_gl_scene w, h
     {:noreply, state}
   end
@@ -61,13 +70,14 @@ defmodule Noise do
     # wxk_left = :wx_const.wxk_left
     # wxk_right = :wx_const.wxk_right
 
-    {
-      :noreply,
-      case key_code do
-        ?N -> put_in(state.noise.seed, :rand.uniform(trunc(1.0e308)))
-        _  -> state
-      end
-    }
+    # {
+    #   :noreply,
+    #   case key_code do
+    #     ?N -> put_in(state.noise.seed, :rand.uniform(trunc(1.0e308)))
+    #     _  -> state
+    #   end
+    # }
+    {:noreply, state}
   end
 
   def handle_info(:update, state) do
@@ -85,12 +95,12 @@ defmodule Noise do
     {:stop, :normal, state}
   end
 
-  def handle_call(msg, _from, state) do
+  def handle_call(_msg, _from, state) do
     {:reply, :ok, state}
   end
 
-  def handle_cast({:seed, new}, state) do
-    {:noreply, put_in(state.noise.seed, new)}
+  def handle_cast(_msg, state) do
+    {:noreply, state}
   end
 
   def code_change(_, _, state) do
@@ -112,7 +122,7 @@ defmodule Noise do
     :gl.viewport 0, 0, width, height
     :gl.matrixMode :wx_const.gl_projection
     :gl.loadIdentity
-    :glu.perspective 45.0, width / height, 0.1, 100.0
+    # :glu.perspective 45.0, width / height, 0.1, 100.0
     :gl.matrixMode :wx_const.gl_modelview
     :gl.loadIdentity
   end
@@ -121,10 +131,10 @@ defmodule Noise do
     {w, h} = :wxWindow.getClientSize state.parent
     resize_gl_scene w, h
     :gl.enable :wx_const.gl_texture_2d
-    :gl.shadeModel :wx_const.gl_smooth
+    # :gl.shadeModel :wx_const.gl_smooth
     :gl.clearColor 0.0, 0.0, 0.0, 0.0
     :gl.clearDepth 1.0
-    :gl.enable :wx_const.gl_depth_test
+    # :gl.enable :wx_const.gl_depth_test
     :gl.depthFunc :wx_const.gl_lequal
     :gl.hint :wx_const.gl_perspective_correction_hint, :wx_const.gl_nicest
 
@@ -146,17 +156,12 @@ defmodule Noise do
     {w, h} = :wxWindow.getClientSize state.parent
     width = containing_power_of_two w
     height = containing_power_of_two h
-
-    data = for x <- 0..width, y <- 0..height do
-      noise = round(255 * Noise.Simplex.get(state.noise, {x, y}))
-      << noise, noise, noise >>
-    end |> :erlang.list_to_binary
-
+    data = GenServer.call(state.noise, :get)
     :gl.clear bor(:wx_const.gl_color_buffer_bit, :wx_const.gl_depth_buffer_bit)
     :gl.loadIdentity
 
     # Draw a quad where we can see it
-    :gl.translatef 0.0, 0.0, -3.5
+    # :gl.translatef 0.0, 0.0, -3.5
     :gl.bindTexture :wx_const.gl_texture_2d, state.texture
     :gl.texParameteri :wx_const.gl_texture_2d, :wx_const.gl_texture_mag_filter, :wx_const.gl_linear
     :gl.texParameteri :wx_const.gl_texture_2d, :wx_const.gl_texture_min_filter, :wx_const.gl_linear
